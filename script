@@ -1,15 +1,7 @@
--- Главные сервисы
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
-local mouse = player:GetMouse()
-
--- Настройки функций
-local isFlipped = false
-local keepSpeed = false
-local lastVelocity = Vector3.new(0, 0, 0)
 
 -- ==========================================
 -- Создание интерфейса (Меню)
@@ -17,16 +9,8 @@ local lastVelocity = Vector3.new(0, 0, 0)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "CustomPlayerMenu"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Пытаемся поместить в CoreGui (для эксплойтов), если нет доступа — в PlayerGui (для Roblox Studio)
-local success = pcall(function()
-	ScreenGui.Parent = CoreGui
-end)
-if not success then
-	ScreenGui.Parent = player:WaitForChild("PlayerGui")
-end
-
--- Главное окно
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 250, 0, 180)
 MainFrame.Position = UDim2.new(0.5, -125, 0.5, -90)
@@ -39,7 +23,6 @@ local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 8)
 UICorner.Parent = MainFrame
 
--- Заголовок
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
@@ -54,7 +37,6 @@ local TitleCorner = Instance.new("UICorner")
 TitleCorner.CornerRadius = UDim.new(0, 8)
 TitleCorner.Parent = Title
 
--- Скрываем нижние углы заголовка для плавного перехода к телу меню
 local TitleCover = Instance.new("Frame")
 TitleCover.Size = UDim2.new(1, 0, 0, 8)
 TitleCover.Position = UDim2.new(0, 0, 1, -8)
@@ -62,7 +44,6 @@ TitleCover.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 TitleCover.BorderSizePixel = 0
 TitleCover.Parent = Title
 
--- Кнопка: Перевернутый скин
 local FlipButton = Instance.new("TextButton")
 FlipButton.Size = UDim2.new(1, -20, 0, 40)
 FlipButton.Position = UDim2.new(0, 10, 0, 50)
@@ -77,7 +58,6 @@ local FlipCorner = Instance.new("UICorner")
 FlipCorner.CornerRadius = UDim.new(0, 6)
 FlipCorner.Parent = FlipButton
 
--- Кнопка: Сохранять скорость
 local SpeedButton = Instance.new("TextButton")
 SpeedButton.Size = UDim2.new(1, -20, 0, 40)
 SpeedButton.Position = UDim2.new(0, 10, 0, 110)
@@ -103,7 +83,6 @@ Title.InputBegan:Connect(function(input)
 		dragging = true
 		mousePos = input.Position
 		framePos = MainFrame.Position
-
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
 				dragging = false
@@ -126,10 +105,13 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- Логика функций (Не визуал, реплицируется)
+-- Логика функций 
 -- ==========================================
+local isFlipped = false
+local keepSpeed = false
+local lastVelocity = Vector3.new(0, 0, 0)
+local originalC0 = nil
 
--- Вспомогательная функция для получения главного сустава (поддерживает R6 и R15)
 local function getRootJoint(character)
 	if character then
 		if character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart:FindFirstChild("RootJoint") then
@@ -142,33 +124,27 @@ local function getRootJoint(character)
 end
 
 -- 1. Перевернутый скин
-local function applyFlip(character)
-	local joint = getRootJoint(character)
-	if joint then
-		-- Поворот на 180 градусов (math.pi) по оси Z
-		joint.C0 = joint.C0 * CFrame.Angles(0, 0, math.pi)
-	end
-end
-
 FlipButton.MouseButton1Click:Connect(function()
 	isFlipped = not isFlipped
-	if isFlipped then
-		FlipButton.Text = "Переворот: ВКЛ"
-		FlipButton.TextColor3 = Color3.fromRGB(100, 255, 100)
-		applyFlip(player.Character)
-	else
-		FlipButton.Text = "Переворот: ВЫКЛ"
-		FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
-		-- Возвращаем обратно
-		applyFlip(player.Character)
-	end
-end)
-
--- Автоматически переворачивать при возрождении, если функция включена
-player.CharacterAdded:Connect(function(newChar)
-	if isFlipped then
-		task.wait(0.5) -- Ждем загрузки суставов
-		applyFlip(newChar)
+	local joint = getRootJoint(player.Character)
+	
+	if joint then
+		-- Сохраняем оригинальную позицию сустава, если еще не сохранили
+		if not originalC0 then
+			originalC0 = joint.C0
+		end
+		
+		if isFlipped then
+			FlipButton.Text = "Переворот: ВКЛ"
+			FlipButton.TextColor3 = Color3.fromRGB(100, 255, 100)
+			-- Переворачиваем персонажа вверх ногами (поворот по оси Z)
+			joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
+		else
+			FlipButton.Text = "Переворот: ВЫКЛ"
+			FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+			-- Возвращаем как было
+			joint.C0 = originalC0
+		end
 	end
 end)
 
@@ -184,8 +160,8 @@ SpeedButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Цикл обработки скорости каждый кадр
-RunService.RenderStepped:Connect(function()
+-- Запуск проверки физики после каждого шага симуляции
+RunService.Stepped:Connect(function()
 	if not keepSpeed then return end
 	
 	local char = player.Character
@@ -193,14 +169,12 @@ RunService.RenderStepped:Connect(function()
 		local hrp = char.HumanoidRootPart
 		local hum = char.Humanoid
 		
-		-- Если игрок жмет кнопки движения (идет)
 		if hum.MoveDirection.Magnitude > 0 then
-			-- Записываем текущую скорость по осям X и Z (без Y, чтобы не улетать вверх)
-			lastVelocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
+			-- Игрок движется — записываем его текущую физическую скорость
+			lastVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
 		else
-			-- Если игрок стоит на месте (отпустил кнопки), принудительно применяем сохраненную скорость
-			-- Y-компонента берется оригинальная, чтобы гравитация работала нормально (игрок мог падать)
-			hrp.Velocity = Vector3.new(lastVelocity.X, hrp.Velocity.Y, lastVelocity.Z)
+			-- Игрок отпустил кнопки — заставляем его скользить дальше
+			hrp.AssemblyLinearVelocity = Vector3.new(lastVelocity.X, hrp.AssemblyLinearVelocity.Y, lastVelocity.Z)
 		end
 	end
 end)
