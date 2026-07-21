@@ -1,0 +1,206 @@
+-- Главные сервисы
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+-- Настройки функций
+local isFlipped = false
+local keepSpeed = false
+local lastVelocity = Vector3.new(0, 0, 0)
+
+-- ==========================================
+-- Создание интерфейса (Меню)
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CustomPlayerMenu"
+ScreenGui.ResetOnSpawn = false
+
+-- Пытаемся поместить в CoreGui (для эксплойтов), если нет доступа — в PlayerGui (для Roblox Studio)
+local success = pcall(function()
+	ScreenGui.Parent = CoreGui
+end)
+if not success then
+	ScreenGui.Parent = player:WaitForChild("PlayerGui")
+end
+
+-- Главное окно
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 250, 0, 180)
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -90)
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+-- Заголовок
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Title.BorderSizePixel = 0
+Title.Text = "Player Menu"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.Parent = Title
+
+-- Скрываем нижние углы заголовка для плавного перехода к телу меню
+local TitleCover = Instance.new("Frame")
+TitleCover.Size = UDim2.new(1, 0, 0, 8)
+TitleCover.Position = UDim2.new(0, 0, 1, -8)
+TitleCover.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+TitleCover.BorderSizePixel = 0
+TitleCover.Parent = Title
+
+-- Кнопка: Перевернутый скин
+local FlipButton = Instance.new("TextButton")
+FlipButton.Size = UDim2.new(1, -20, 0, 40)
+FlipButton.Position = UDim2.new(0, 10, 0, 50)
+FlipButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+FlipButton.Text = "Переворот: ВЫКЛ"
+FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+FlipButton.Font = Enum.Font.GothamSemibold
+FlipButton.TextSize = 14
+FlipButton.Parent = MainFrame
+
+local FlipCorner = Instance.new("UICorner")
+FlipCorner.CornerRadius = UDim.new(0, 6)
+FlipCorner.Parent = FlipButton
+
+-- Кнопка: Сохранять скорость
+local SpeedButton = Instance.new("TextButton")
+SpeedButton.Size = UDim2.new(1, -20, 0, 40)
+SpeedButton.Position = UDim2.new(0, 10, 0, 110)
+SpeedButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+SpeedButton.Text = "Инерция: ВЫКЛ"
+SpeedButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+SpeedButton.Font = Enum.Font.GothamSemibold
+SpeedButton.TextSize = 14
+SpeedButton.Parent = MainFrame
+
+local SpeedCorner = Instance.new("UICorner")
+SpeedCorner.CornerRadius = UDim.new(0, 6)
+SpeedCorner.Parent = SpeedButton
+
+-- ==========================================
+-- Логика перетаскивания меню (Drag & Drop)
+-- ==========================================
+local dragging = false
+local dragInput, mousePos, framePos
+
+Title.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		mousePos = input.Position
+		framePos = MainFrame.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+Title.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+	if dragging and dragInput then
+		local delta = dragInput.Position - mousePos
+		MainFrame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+	end
+end)
+
+-- ==========================================
+-- Логика функций (Не визуал, реплицируется)
+-- ==========================================
+
+-- Вспомогательная функция для получения главного сустава (поддерживает R6 и R15)
+local function getRootJoint(character)
+	if character then
+		if character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart:FindFirstChild("RootJoint") then
+			return character.HumanoidRootPart.RootJoint -- R6
+		elseif character:FindFirstChild("LowerTorso") and character.LowerTorso:FindFirstChild("Root") then
+			return character.LowerTorso.Root -- R15
+		end
+	end
+	return nil
+end
+
+-- 1. Перевернутый скин
+local function applyFlip(character)
+	local joint = getRootJoint(character)
+	if joint then
+		-- Поворот на 180 градусов (math.pi) по оси Z
+		joint.C0 = joint.C0 * CFrame.Angles(0, 0, math.pi)
+	end
+end
+
+FlipButton.MouseButton1Click:Connect(function()
+	isFlipped = not isFlipped
+	if isFlipped then
+		FlipButton.Text = "Переворот: ВКЛ"
+		FlipButton.TextColor3 = Color3.fromRGB(100, 255, 100)
+		applyFlip(player.Character)
+	else
+		FlipButton.Text = "Переворот: ВЫКЛ"
+		FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+		-- Возвращаем обратно
+		applyFlip(player.Character)
+	end
+end)
+
+-- Автоматически переворачивать при возрождении, если функция включена
+player.CharacterAdded:Connect(function(newChar)
+	if isFlipped then
+		task.wait(0.5) -- Ждем загрузки суставов
+		applyFlip(newChar)
+	end
+end)
+
+-- 2. Не терять скорость (Сохранение инерции)
+SpeedButton.MouseButton1Click:Connect(function()
+	keepSpeed = not keepSpeed
+	if keepSpeed then
+		SpeedButton.Text = "Инерция: ВКЛ"
+		SpeedButton.TextColor3 = Color3.fromRGB(100, 255, 100)
+	else
+		SpeedButton.Text = "Инерция: ВЫКЛ"
+		SpeedButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+	end
+end)
+
+-- Цикл обработки скорости каждый кадр
+RunService.RenderStepped:Connect(function()
+	if not keepSpeed then return end
+	
+	local char = player.Character
+	if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
+		local hrp = char.HumanoidRootPart
+		local hum = char.Humanoid
+		
+		-- Если игрок жмет кнопки движения (идет)
+		if hum.MoveDirection.Magnitude > 0 then
+			-- Записываем текущую скорость по осям X и Z (без Y, чтобы не улетать вверх)
+			lastVelocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
+		else
+			-- Если игрок стоит на месте (отпустил кнопки), принудительно применяем сохраненную скорость
+			-- Y-компонента берется оригинальная, чтобы гравитация работала нормально (игрок мог падать)
+			hrp.Velocity = Vector3.new(lastVelocity.X, hrp.Velocity.Y, lastVelocity.Z)
+		end
+	end
+end)
