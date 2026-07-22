@@ -12,8 +12,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 250, 0, 180)
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -90)
+MainFrame.Size = UDim2.new(0, 250, 0, 230) -- Увеличена высота под 3 кнопки
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -115)
 MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -44,9 +44,10 @@ TitleCover.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 TitleCover.BorderSizePixel = 0
 TitleCover.Parent = Title
 
+-- Кнопка 1: Переворот
 local FlipButton = Instance.new("TextButton")
 FlipButton.Size = UDim2.new(1, -20, 0, 40)
-FlipButton.Position = UDim2.new(0, 10, 0, 50)
+FlipButton.Position = UDim2.new(0, 10, 0, 45)
 FlipButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
 FlipButton.Text = "Переворот: ВЫКЛ"
 FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -58,9 +59,10 @@ local FlipCorner = Instance.new("UICorner")
 FlipCorner.CornerRadius = UDim.new(0, 6)
 FlipCorner.Parent = FlipButton
 
+-- Кнопка 2: Инерция
 local SpeedButton = Instance.new("TextButton")
 SpeedButton.Size = UDim2.new(1, -20, 0, 40)
-SpeedButton.Position = UDim2.new(0, 10, 0, 110)
+SpeedButton.Position = UDim2.new(0, 10, 0, 95)
 SpeedButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
 SpeedButton.Text = "Инерция: ВЫКЛ"
 SpeedButton.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -71,6 +73,21 @@ SpeedButton.Parent = MainFrame
 local SpeedCorner = Instance.new("UICorner")
 SpeedCorner.CornerRadius = UDim.new(0, 6)
 SpeedCorner.Parent = SpeedButton
+
+-- Кнопка 3: Ходьба по стенам и потолку
+local WallWalkButton = Instance.new("TextButton")
+WallWalkButton.Size = UDim2.new(1, -20, 0, 40)
+WallWalkButton.Position = UDim2.new(0, 10, 0, 145)
+WallWalkButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+WallWalkButton.Text = "Стены/Потолок: ВЫКЛ"
+WallWalkButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+WallWalkButton.Font = Enum.Font.GothamSemibold
+WallWalkButton.TextSize = 14
+WallWalkButton.Parent = MainFrame
+
+local WallWalkCorner = Instance.new("UICorner")
+WallWalkCorner.CornerRadius = UDim.new(0, 6)
+WallWalkCorner.Parent = WallWalkButton
 
 -- ==========================================
 -- Логика перетаскивания меню (Drag & Drop)
@@ -109,8 +126,12 @@ end)
 -- ==========================================
 local isFlipped = false
 local keepSpeed = false
+local isWallWalking = false
 local lastVelocity = Vector3.new(0, 0, 0)
 local originalC0 = nil
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 local function getRootJoint(character)
 	if character then
@@ -123,13 +144,25 @@ local function getRootJoint(character)
 	return nil
 end
 
+-- Сброс сустава при респавне
+player.CharacterAdded:Connect(function(newChar)
+	originalC0 = nil
+	task.wait(0.2)
+	if isFlipped then
+		local joint = getRootJoint(newChar)
+		if joint then
+			originalC0 = joint.C0
+			joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
+		end
+	end
+end)
+
 -- 1. Перевернутый скин
 FlipButton.MouseButton1Click:Connect(function()
 	isFlipped = not isFlipped
 	local joint = getRootJoint(player.Character)
 	
 	if joint then
-		-- Сохраняем оригинальную позицию сустава, если еще не сохранили
 		if not originalC0 then
 			originalC0 = joint.C0
 		end
@@ -137,12 +170,10 @@ FlipButton.MouseButton1Click:Connect(function()
 		if isFlipped then
 			FlipButton.Text = "Переворот: ВКЛ"
 			FlipButton.TextColor3 = Color3.fromRGB(100, 255, 100)
-			-- Переворачиваем персонажа вверх ногами (поворот по оси Z)
 			joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
 		else
 			FlipButton.Text = "Переворот: ВЫКЛ"
 			FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
-			-- Возвращаем как было
 			joint.C0 = originalC0
 		end
 	end
@@ -160,21 +191,77 @@ SpeedButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Запуск проверки физики после каждого шага симуляции
-RunService.Stepped:Connect(function()
-	if not keepSpeed then return end
-	
+-- 3. Ходьба по стенам и потолку
+WallWalkButton.MouseButton1Click:Connect(function()
+	isWallWalking = not isWallWalking
+	if isWallWalking then
+		WallWalkButton.Text = "Стены/Потолок: ВКЛ"
+		WallWalkButton.TextColor3 = Color3.fromRGB(100, 255, 100)
+	else
+		WallWalkButton.Text = "Стены/Потолок: ВЫКЛ"
+		WallWalkButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+	end
+end)
+
+-- Проверка поверхностей для Wall Walk
+local function checkSurfaces(char)
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+
+	rayParams.FilterDescendantsInstances = {char}
+
+	-- Лучи во все стороны от персонажа (вниз, вперед, назад, влево, вправо, вверх)
+	local checkDirections = {
+		-hrp.CFrame.UpVector * 5,
+		hrp.CFrame.LookVector * 4,
+		-hrp.CFrame.LookVector * 4,
+		hrp.CFrame.RightVector * 4,
+		-hrp.CFrame.RightVector * 4,
+		hrp.CFrame.UpVector * 5
+	}
+
+	for _, dir in ipairs(checkDirections) do
+		local result = workspace:Raycast(hrp.Position, dir, rayParams)
+		if result and result.Instance and result.Instance.CanCollide then
+			return result.Normal
+		end
+	end
+	return nil
+end
+
+-- Основной цикл физики
+RunService.Stepped:Connect(function(_, dt)
 	local char = player.Character
-	if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
-		local hrp = char.HumanoidRootPart
-		local hum = char.Humanoid
-		
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum or hum.Health <= 0 then return end
+
+	-- Логика сохранения инерции
+	if keepSpeed then
 		if hum.MoveDirection.Magnitude > 0 then
-			-- Игрок движется — записываем его текущую физическую скорость
 			lastVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
 		else
-			-- Игрок отпустил кнопки — заставляем его скользить дальше
 			hrp.AssemblyLinearVelocity = Vector3.new(lastVelocity.X, hrp.AssemblyLinearVelocity.Y, lastVelocity.Z)
+		end
+	end
+
+	-- Логика ходьбы по стенам и потолку
+	if isWallWalking then
+		local normal = checkSurfaces(char)
+		if normal then
+			-- Выравниваем персонажа параллельно нормали стены/потолка
+			local currentLook = hrp.CFrame.LookVector
+			local right = currentLook:Cross(normal)
+			if right.Magnitude > 0.001 then
+				local forward = normal:Cross(right).Unit
+				hrp.CFrame = CFrame.fromMatrix(hrp.Position, right.Unit, normal, -forward)
+			end
+
+			-- Компенсируем стандартную гравитацию и слегка прижимаем персонажа к поверхности
+			local antiGravity = Vector3.new(0, workspace.Gravity * dt, 0)
+			local stickForce = -normal * 25 * dt
+			hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity + antiGravity + stickForce
 		end
 	end
 end)
