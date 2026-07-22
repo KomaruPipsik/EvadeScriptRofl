@@ -131,14 +131,14 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- Переменные и логика функций
+-- Переменные и функции
 -- ==========================================
 local isFlipped = false
 local keepSpeed = false
 local isWallWalking = false
 
 local savedVelocity = Vector3.zero
-local originalC0 = nil
+local defaultC0Map = {}
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -156,7 +156,20 @@ local function getRootJoint(character)
 	return nil
 end
 
--- Переключение Переворота
+-- Вспомогательный элемент BodyVelocity для инерции
+local function getOrCreateBV(hrp)
+	local bv = hrp:FindFirstChild("InertiaVelocityForce")
+	if not bv then
+		bv = Instance.new("BodyVelocity")
+		bv.Name = "InertiaVelocityForce"
+		bv.MaxForce = Vector3.new(0, 0, 0)
+		bv.P = 12500
+		bv.Parent = hrp
+	end
+	return bv
+end
+
+-- Переключение 1: Переворот
 FlipButton.MouseButton1Click:Connect(function()
 	isFlipped = not isFlipped
 	if isFlipped then
@@ -165,17 +178,10 @@ FlipButton.MouseButton1Click:Connect(function()
 	else
 		FlipButton.Text = "Переворот: ВЫКЛ"
 		FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
-		
-		-- Возвращаем исходную позицию при выключении
-		local char = player.Character
-		local joint = getRootJoint(char)
-		if joint and originalC0 then
-			joint.C0 = originalC0
-		end
 	end
 end)
 
--- Переключение Инерции
+-- Переключение 2: Инерция
 SpeedButton.MouseButton1Click:Connect(function()
 	keepSpeed = not keepSpeed
 	if keepSpeed then
@@ -188,7 +194,7 @@ SpeedButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Переключение Ходьбы по стенам
+-- Переключение 3: Ходьба по стенам
 WallWalkButton.MouseButton1Click:Connect(function()
 	isWallWalking = not isWallWalking
 	if isWallWalking then
@@ -229,43 +235,56 @@ end
 -- Игровые циклы
 -- ==========================================
 
--- 1. Поддержание Переворота (перекрывает стандартные анимации Roblox)
+-- 1. Логика Переворота (Выполняется каждый кадр рендера)
 RunService.RenderStepped:Connect(function()
-	if not isFlipped then return end
-	
 	local char = player.Character
+	if not char then return end
 	local joint = getRootJoint(char)
+	
 	if joint then
-		if not originalC0 then
-			originalC0 = joint.C0
+		-- Сохраняем истинный базовый C0 для текущего персонажа один раз
+		if not defaultC0Map[char] then
+			defaultC0Map[char] = joint.C0
 		end
-		joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
+		
+		if isFlipped then
+			joint.C0 = defaultC0Map[char] * CFrame.Angles(0, 0, math.pi)
+		else
+			joint.C0 = defaultC0Map[char]
+		end
 	end
 end)
 
--- 2. Поддержание Инерции
+-- 2. Логика Инерции (Физический импульс BodyVelocity)
 RunService.Heartbeat:Connect(function()
-	if not keepSpeed then return end
-	
 	local char = player.Character
 	if not char then return end
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	local hum = char:FindFirstChildOfClass("Humanoid")
-	
-	if hrp and hum and hum.Health > 0 then
+	if not hrp or not hum or hum.Health <= 0 then return end
+
+	local bv = getOrCreateBV(hrp)
+
+	if keepSpeed then
 		if hum.MoveDirection.Magnitude > 0.1 then
-			-- Фиксируем текущий вектор движения во время бега
+			-- Пока зажаты кнопки движения — фиксируем горизонтальную скорость
 			savedVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+			bv.MaxForce = Vector3.new(0, 0, 0)
 		else
-			-- При отпущенных кнопках продолжается скольжение по направлению
+			-- Когда отжаты — принудительно двигаем игрока вперед с зафиксированной скоростью
 			if savedVelocity.Magnitude > 1 then
-				hrp.AssemblyLinearVelocity = Vector3.new(savedVelocity.X, hrp.AssemblyLinearVelocity.Y, savedVelocity.Z)
+				bv.MaxForce = Vector3.new(1000000, 0, 1000000)
+				bv.Velocity = Vector3.new(savedVelocity.X, 0, savedVelocity.Z)
+			else
+				bv.MaxForce = Vector3.new(0, 0, 0)
 			end
 		end
+	else
+		bv.MaxForce = Vector3.new(0, 0, 0)
 	end
 end)
 
--- 3. Стенолазание
+-- 3. Логика Стенолазания
 RunService.Stepped:Connect(function(_, dt)
 	if not isWallWalking then return end
 	
@@ -285,7 +304,7 @@ RunService.Stepped:Connect(function(_, dt)
 			end
 
 			local antiGravity = Vector3.new(0, workspace.Gravity * dt, 0)
-			local stickForce = -normal * 30 * dt
+			local stickForce = -normal * 35 * dt
 			hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity + antiGravity + stickForce
 		end
 	end
