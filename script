@@ -12,11 +12,12 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 250, 0, 230) -- Увеличена высота под 3 кнопки
+MainFrame.Size = UDim2.new(0, 250, 0, 230)
 MainFrame.Position = UDim2.new(0.5, -125, 0.5, -115)
 MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
+MainFrame.ZIndex = 1
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
@@ -31,6 +32,7 @@ Title.Text = "Player Menu"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 14
+Title.ZIndex = 2
 Title.Parent = MainFrame
 
 local TitleCorner = Instance.new("UICorner")
@@ -42,6 +44,7 @@ TitleCover.Size = UDim2.new(1, 0, 0, 8)
 TitleCover.Position = UDim2.new(0, 0, 1, -8)
 TitleCover.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 TitleCover.BorderSizePixel = 0
+TitleCover.ZIndex = 2
 TitleCover.Parent = Title
 
 -- Кнопка 1: Переворот
@@ -53,6 +56,8 @@ FlipButton.Text = "Переворот: ВЫКЛ"
 FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
 FlipButton.Font = Enum.Font.GothamSemibold
 FlipButton.TextSize = 14
+FlipButton.ZIndex = 5
+FlipButton.Active = true
 FlipButton.Parent = MainFrame
 
 local FlipCorner = Instance.new("UICorner")
@@ -68,6 +73,8 @@ SpeedButton.Text = "Инерция: ВЫКЛ"
 SpeedButton.TextColor3 = Color3.fromRGB(255, 100, 100)
 SpeedButton.Font = Enum.Font.GothamSemibold
 SpeedButton.TextSize = 14
+SpeedButton.ZIndex = 5
+SpeedButton.Active = true
 SpeedButton.Parent = MainFrame
 
 local SpeedCorner = Instance.new("UICorner")
@@ -83,6 +90,8 @@ WallWalkButton.Text = "Стены/Потолок: ВЫКЛ"
 WallWalkButton.TextColor3 = Color3.fromRGB(255, 100, 100)
 WallWalkButton.Font = Enum.Font.GothamSemibold
 WallWalkButton.TextSize = 14
+WallWalkButton.ZIndex = 5
+WallWalkButton.Active = true
 WallWalkButton.Parent = MainFrame
 
 local WallWalkCorner = Instance.new("UICorner")
@@ -122,12 +131,13 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- Логика функций 
+-- Переменные и функции
 -- ==========================================
 local isFlipped = false
 local keepSpeed = false
 local isWallWalking = false
-local lastVelocity = Vector3.new(0, 0, 0)
+
+local savedHorizontalVelocity = Vector3.zero
 local originalC0 = nil
 
 local rayParams = RaycastParams.new()
@@ -135,19 +145,22 @@ rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 local function getRootJoint(character)
 	if character then
-		if character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart:FindFirstChild("RootJoint") then
-			return character.HumanoidRootPart.RootJoint -- R6
-		elseif character:FindFirstChild("LowerTorso") and character.LowerTorso:FindFirstChild("Root") then
-			return character.LowerTorso.Root -- R15
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp and hrp:FindFirstChild("RootJoint") then
+			return hrp.RootJoint -- R6
+		end
+		local lowerTorso = character:FindFirstChild("LowerTorso")
+		if lowerTorso and lowerTorso:FindFirstChild("Root") then
+			return lowerTorso.Root -- R15
 		end
 	end
 	return nil
 end
 
--- Сброс сустава при респавне
+-- Автоматический сброс при респавне
 player.CharacterAdded:Connect(function(newChar)
 	originalC0 = nil
-	task.wait(0.2)
+	task.wait(0.3)
 	if isFlipped then
 		local joint = getRootJoint(newChar)
 		if joint then
@@ -157,29 +170,31 @@ player.CharacterAdded:Connect(function(newChar)
 	end
 end)
 
--- 1. Перевернутый скин
+-- 1. Переворот
 FlipButton.MouseButton1Click:Connect(function()
 	isFlipped = not isFlipped
-	local joint = getRootJoint(player.Character)
+	local char = player.Character
+	local joint = getRootJoint(char)
 	
-	if joint then
-		if not originalC0 then
-			originalC0 = joint.C0
-		end
-		
-		if isFlipped then
-			FlipButton.Text = "Переворот: ВКЛ"
-			FlipButton.TextColor3 = Color3.fromRGB(100, 255, 100)
+	if isFlipped then
+		FlipButton.Text = "Переворот: ВКЛ"
+		FlipButton.TextColor3 = Color3.fromRGB(100, 255, 100)
+		if joint then
+			if not originalC0 then
+				originalC0 = joint.C0
+			end
 			joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
-		else
-			FlipButton.Text = "Переворот: ВЫКЛ"
-			FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+		end
+	else
+		FlipButton.Text = "Переворот: ВЫКЛ"
+		FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+		if joint and originalC0 then
 			joint.C0 = originalC0
 		end
 	end
 end)
 
--- 2. Не терять скорость (Сохранение инерции)
+-- 2. Сохранение инерции
 SpeedButton.MouseButton1Click:Connect(function()
 	keepSpeed = not keepSpeed
 	if keepSpeed then
@@ -188,10 +203,11 @@ SpeedButton.MouseButton1Click:Connect(function()
 	else
 		SpeedButton.Text = "Инерция: ВЫКЛ"
 		SpeedButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+		savedHorizontalVelocity = Vector3.zero
 	end
 end)
 
--- 3. Ходьба по стенам и потолку
+-- 3. Ходьба по стенам/потолку
 WallWalkButton.MouseButton1Click:Connect(function()
 	isWallWalking = not isWallWalking
 	if isWallWalking then
@@ -203,14 +219,13 @@ WallWalkButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Проверка поверхностей для Wall Walk
+-- Рейкаст для стенолазания
 local function checkSurfaces(char)
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return nil end
 
 	rayParams.FilterDescendantsInstances = {char}
 
-	-- Лучи во все стороны от персонажа (вниз, вперед, назад, влево, вправо, вверх)
 	local checkDirections = {
 		-hrp.CFrame.UpVector * 5,
 		hrp.CFrame.LookVector * 4,
@@ -229,28 +244,48 @@ local function checkSurfaces(char)
 	return nil
 end
 
--- Основной цикл физики
-RunService.Stepped:Connect(function(_, dt)
+-- ==========================================
+-- Основные физические циклы
+-- ==========================================
+
+-- Поддержание скорости (Heartbeat срабатывает ПОСЛЕ просчета физики движка)
+RunService.Heartbeat:Connect(function()
+	if not keepSpeed then return end
+	
 	local char = player.Character
 	if not char then return end
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hrp or not hum or hum.Health <= 0 then return end
-
-	-- Логика сохранения инерции
-	if keepSpeed then
-		if hum.MoveDirection.Magnitude > 0 then
-			lastVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+	
+	if hrp and hum and hum.Health > 0 then
+		if hum.MoveDirection.Magnitude > 0.05 then
+			-- Пока игрок держит WASD — фиксируем горизонтальную скорость
+			savedHorizontalVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
 		else
-			hrp.AssemblyLinearVelocity = Vector3.new(lastVelocity.X, hrp.AssemblyLinearVelocity.Y, lastVelocity.Z)
+			-- Когда отпустил клавиши — восстанавливаем скорость, не давая движку его остановить
+			if savedHorizontalVelocity.Magnitude > 0.5 then
+				hrp.AssemblyLinearVelocity = Vector3.new(
+					savedHorizontalVelocity.X,
+					hrp.AssemblyLinearVelocity.Y,
+					savedHorizontalVelocity.Z
+				)
+			end
 		end
 	end
+end)
 
-	-- Логика ходьбы по стенам и потолку
-	if isWallWalking then
+-- Стенолазание (Stepped)
+RunService.Stepped:Connect(function(_, dt)
+	if not isWallWalking then return end
+	
+	local char = player.Character
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	
+	if hrp and hum and hum.Health > 0 then
 		local normal = checkSurfaces(char)
 		if normal then
-			-- Выравниваем персонажа параллельно нормали стены/потолка
 			local currentLook = hrp.CFrame.LookVector
 			local right = currentLook:Cross(normal)
 			if right.Magnitude > 0.001 then
@@ -258,9 +293,8 @@ RunService.Stepped:Connect(function(_, dt)
 				hrp.CFrame = CFrame.fromMatrix(hrp.Position, right.Unit, normal, -forward)
 			end
 
-			-- Компенсируем стандартную гравитацию и слегка прижимаем персонажа к поверхности
 			local antiGravity = Vector3.new(0, workspace.Gravity * dt, 0)
-			local stickForce = -normal * 25 * dt
+			local stickForce = -normal * 30 * dt
 			hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity + antiGravity + stickForce
 		end
 	end
