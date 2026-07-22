@@ -131,70 +131,51 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- Переменные и функции
+-- Переменные и логика функций
 -- ==========================================
 local isFlipped = false
 local keepSpeed = false
 local isWallWalking = false
 
-local savedHorizontalVelocity = Vector3.zero
+local savedVelocity = Vector3.zero
 local originalC0 = nil
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 local function getRootJoint(character)
-	if character then
-		local hrp = character:FindFirstChild("HumanoidRootPart")
-		if hrp and hrp:FindFirstChild("RootJoint") then
-			return hrp.RootJoint -- R6
-		end
-		local lowerTorso = character:FindFirstChild("LowerTorso")
-		if lowerTorso and lowerTorso:FindFirstChild("Root") then
-			return lowerTorso.Root -- R15
-		end
+	if not character then return nil end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if hrp and hrp:FindFirstChild("RootJoint") then
+		return hrp.RootJoint -- R6
+	end
+	local lowerTorso = character:FindFirstChild("LowerTorso")
+	if lowerTorso and lowerTorso:FindFirstChild("Root") then
+		return lowerTorso.Root -- R15
 	end
 	return nil
 end
 
--- Автоматический сброс при респавне
-player.CharacterAdded:Connect(function(newChar)
-	originalC0 = nil
-	task.wait(0.3)
-	if isFlipped then
-		local joint = getRootJoint(newChar)
-		if joint then
-			originalC0 = joint.C0
-			joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
-		end
-	end
-end)
-
--- 1. Переворот
+-- Переключение Переворота
 FlipButton.MouseButton1Click:Connect(function()
 	isFlipped = not isFlipped
-	local char = player.Character
-	local joint = getRootJoint(char)
-	
 	if isFlipped then
 		FlipButton.Text = "Переворот: ВКЛ"
 		FlipButton.TextColor3 = Color3.fromRGB(100, 255, 100)
-		if joint then
-			if not originalC0 then
-				originalC0 = joint.C0
-			end
-			joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
-		end
 	else
 		FlipButton.Text = "Переворот: ВЫКЛ"
 		FlipButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+		
+		-- Возвращаем исходную позицию при выключении
+		local char = player.Character
+		local joint = getRootJoint(char)
 		if joint and originalC0 then
 			joint.C0 = originalC0
 		end
 	end
 end)
 
--- 2. Сохранение инерции
+-- Переключение Инерции
 SpeedButton.MouseButton1Click:Connect(function()
 	keepSpeed = not keepSpeed
 	if keepSpeed then
@@ -203,11 +184,11 @@ SpeedButton.MouseButton1Click:Connect(function()
 	else
 		SpeedButton.Text = "Инерция: ВЫКЛ"
 		SpeedButton.TextColor3 = Color3.fromRGB(255, 100, 100)
-		savedHorizontalVelocity = Vector3.zero
+		savedVelocity = Vector3.zero
 	end
 end)
 
--- 3. Ходьба по стенам/потолку
+-- Переключение Ходьбы по стенам
 WallWalkButton.MouseButton1Click:Connect(function()
 	isWallWalking = not isWallWalking
 	if isWallWalking then
@@ -219,7 +200,7 @@ WallWalkButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Рейкаст для стенолазания
+-- Поиск нормали поверхности
 local function checkSurfaces(char)
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return nil end
@@ -245,10 +226,24 @@ local function checkSurfaces(char)
 end
 
 -- ==========================================
--- Основные физические циклы
+-- Игровые циклы
 -- ==========================================
 
--- Поддержание скорости (Heartbeat срабатывает ПОСЛЕ просчета физики движка)
+-- 1. Поддержание Переворота (перекрывает стандартные анимации Roblox)
+RunService.RenderStepped:Connect(function()
+	if not isFlipped then return end
+	
+	local char = player.Character
+	local joint = getRootJoint(char)
+	if joint then
+		if not originalC0 then
+			originalC0 = joint.C0
+		end
+		joint.C0 = originalC0 * CFrame.Angles(0, 0, math.pi)
+	end
+end)
+
+-- 2. Поддержание Инерции
 RunService.Heartbeat:Connect(function()
 	if not keepSpeed then return end
 	
@@ -258,23 +253,19 @@ RunService.Heartbeat:Connect(function()
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	
 	if hrp and hum and hum.Health > 0 then
-		if hum.MoveDirection.Magnitude > 0.05 then
-			-- Пока игрок держит WASD — фиксируем горизонтальную скорость
-			savedHorizontalVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+		if hum.MoveDirection.Magnitude > 0.1 then
+			-- Фиксируем текущий вектор движения во время бега
+			savedVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
 		else
-			-- Когда отпустил клавиши — восстанавливаем скорость, не давая движку его остановить
-			if savedHorizontalVelocity.Magnitude > 0.5 then
-				hrp.AssemblyLinearVelocity = Vector3.new(
-					savedHorizontalVelocity.X,
-					hrp.AssemblyLinearVelocity.Y,
-					savedHorizontalVelocity.Z
-				)
+			-- При отпущенных кнопках продолжается скольжение по направлению
+			if savedVelocity.Magnitude > 1 then
+				hrp.AssemblyLinearVelocity = Vector3.new(savedVelocity.X, hrp.AssemblyLinearVelocity.Y, savedVelocity.Z)
 			end
 		end
 	end
 end)
 
--- Стенолазание (Stepped)
+-- 3. Стенолазание
 RunService.Stepped:Connect(function(_, dt)
 	if not isWallWalking then return end
 	
